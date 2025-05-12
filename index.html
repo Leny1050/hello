@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Селфи с маской и отправкой в Telegram</title>
+  <title>Селфи с отправкой в Telegram</title>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/tracking-min.js"></script>
   <style>
     body {
@@ -21,7 +21,7 @@
     #container {
       position: relative;
       width: 100vw;
-      height: 75vh;
+      height: 60vh;
       max-width: 640px;
       max-height: 480px;
     }
@@ -41,26 +41,37 @@
     }
     h1 {
       color: #333;
-      font-size: 1.5em;
+      font-size: 1.2em;
       margin: 10px 0;
+      text-align: center;
     }
     button {
       margin-top: 20px;
-      padding: 15px 30px;
-      font-size: 18px;
-      background-color: #007bff;
+      padding: 20px 40px;
+      font-size: 20px;
+      background-color: #28a745;
       color: white;
       border: none;
-      border-radius: 5px;
+      border-radius: 10px;
       cursor: pointer;
+      touch-action: manipulation;
     }
     button:hover {
-      background-color: #0056b3;
+      background-color: #218838;
     }
     #status {
       margin-top: 10px;
-      font-size: 14px;
-      color: #666;
+      font-size: 16px;
+      color: #333;
+      text-align: center;
+    }
+    @media (orientation: landscape) {
+      #container {
+        height: 100vh;
+        width: 133.33vh;
+        max-width: none;
+        max-height: none;
+      }
     }
   </style>
 </head>
@@ -71,8 +82,8 @@
     <canvas id="canvas"></canvas>
     <canvas id="originalCanvas"></canvas>
   </div>
-  <button onclick="takeSnapshot()">Сделать снимок и отправить</button>
-  <div id="status"></div>
+  <button onclick="takeSnapshot()">Нажми, когда готов!</button>
+  <div id="status">Покажи лицо в кадре!</div>
 
   <script>
     const video = document.getElementById('video');
@@ -89,7 +100,9 @@
     // Запуск камеры
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user' }
+        });
         video.srcObject = stream;
         video.onloadedmetadata = () => {
           canvas.width = video.videoWidth;
@@ -97,6 +110,7 @@
           originalCanvas.width = video.videoWidth;
           originalCanvas.height = video.videoHeight;
           startTracking();
+          drawFrame();
         };
       } catch (err) {
         console.error('Ошибка доступа к камере:', err);
@@ -104,7 +118,16 @@
       }
     }
 
-    // Настройка tracking.js
+    // Рисуем зеленую рамку
+    function drawFrame() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.strokeStyle = 'rgba(40, 167, 69, 0.7)';
+      ctx.lineWidth = 10;
+      ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+      requestAnimationFrame(drawFrame);
+    }
+
+    // Отслеживание лица
     function startTracking() {
       const tracker = new tracking.ObjectTracker('face');
       tracker.setInitialScale(4);
@@ -113,21 +136,17 @@
       tracking.track('#video', tracker, { camera: true });
 
       tracker.on('track', function(event) {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        event.data.forEach(function(rect) {
-          // Рисуем красный кружок на лице
-          const centerX = rect.x + rect.width / 2;
-          const centerY = rect.y + rect.height / 2;
-          const radius = Math.max(rect.width, rect.height) / 2;
-          ctx.beginPath();
-          ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-          ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-          ctx.fill();
-        });
+        if (event.data.length > 0) {
+          statusDiv.textContent = 'Лицо в кадре! Нажми кнопку!';
+          statusDiv.style.color = '#28a745';
+        } else {
+          statusDiv.textContent = 'Покажи лицо в кадре!';
+          statusDiv.style.color = '#333';
+        }
       });
     }
 
-    // Снимок без маски и отправка в Telegram
+    // Снимок без эффектов и отправка в Telegram
     async function takeSnapshot() {
       statusDiv.textContent = 'Захват снимка...';
       originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
@@ -145,13 +164,10 @@
           statusDiv.textContent = result.ok ? 'Фото успешно отправлено!' : 'Ошибка: ' + result.description;
         } catch (err) {
           console.error('Ошибка:', err);
-          statusDiv.textContent = 'Не удалось отправить фото.';
+          statusDiv.textContent = 'Не удалось отправить фото. Проверьте подключение.';
         }
       }, 'image/jpeg');
     }
-
-      <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-      <script>eruda.init();</script>
 
     // Запуск камеры
     startCamera();
